@@ -68,8 +68,3 @@
   </a>
   <a href="https://www.paypal.me/Phoenix1504e" target="_blank">
     <img src="https://raw.githubusercontent.com/maurodesouza/profile-readme-generator/master/src/assets/icons/social/paypal/default.svg" width="52" height="40" alt="paypal logo"  />
-<br clear="both">
-
-<img src="https://raw.githubusercontent.com/Phoenix1504e/Phoenix1504e/output/snake.svg" alt="Snake animation" />
-
-###

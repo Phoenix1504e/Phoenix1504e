@@ -1,5 +1,5 @@
 # 💫 About Me:
-🔭 I’m currently working on a website<br>🌱 I’m currently learning Java Fullstack
+🔭 I’m currently working on a website<br>🌱 I’m currently learning machine learning in python
 
 
 ## 🌐 Socials:

@@ -62,7 +62,7 @@
 ![](https://github-contributor-stats.vercel.app/api?username=Phoenix1504e&limit=5&theme=dark&combine_all_yearly_contributions=true)
 
 ---
-[![](https://visitcount.itsvg.in/api?id=Phoenix1504e&icon=0&color=0)](https://visitcount.itsvg.in)
+[![](https://visitcount.itsvg.in/api?id=Phoenix1504e&label=Profile%20Views&color=12&icon=5&pretty=false)](https://visitcount.itsvg.in)
 
   ## 💰 You can help me by Donating
   </a>

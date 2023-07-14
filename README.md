@@ -46,7 +46,7 @@
 ![](https://github-readme-stats.vercel.app/api/top-langs/?username=Phoenix1504e&theme=dark&hide_border=true&include_all_commits=true&count_private=true&layout=compact)
 
 ## 🏆 GitHub Trophies
-![](https://github-profile-trophy.vercel.app/?username=visionmedia&theme=dark&no-frame=true&no-bg=true&margin-w=4)
+![](https://github-profile-trophy.vercel.app/?username=Phoenix1504e&theme=dark&no-frame=true&no-bg=true&margin-w=4)
 
 ## 🐦 Latest Tweet
 [![](https://gtce.itsvg.in/api?username=Phoenix1504e)](https://github.com/VishwaGauravIn/github-twitter-card-embed)

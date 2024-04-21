@@ -631,3 +631,4 @@
     plugin_stock_duration: # optional, default is <default-value>
     # Time interval between points
     plugin_stock_interval: # optional, default is <default-value>
+    workflow_dispatch:

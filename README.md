@@ -1,5 +1,5 @@
 # 💫 About Me: 
-🔭 I’m currently working on skills for ai development<br>🌱 I’m currently learning machine learning algorithms from scratch in python
+🔭 I’m currently working on skills required to master cloud development <br>🌱 I’m currently learning a new language called as GO
 
 
 ## 🌐 Socials:

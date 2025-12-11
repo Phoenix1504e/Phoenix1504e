@@ -47,7 +47,7 @@
 ![](https://github-readme-stats.vercel.app/api/top-langs/?username=Phoenix1504e&theme=dark&hide_border=true&include_all_commits=true&count_private=true&layout=compact)
 
 ## 🏆 GitHub Trophies
-![](https://github-profile-trophy.vercel.app/?username=Phoenix1504e&theme=onedark)
+![](https://github-readme-stats-seven-nu-75.vercel.app/?username=Phoenix1504e&theme=discord)
 
 ### ✍️ Random Dev Quote
 ![](https://quotes-github-readme.vercel.app/api?type=horizontal&theme=dark)

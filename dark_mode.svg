@@ -1,5 +1,16 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<svg xmlns="http://www.w3.org/2000/svg" font-family="ConsolasFallback,Consolas,monospace" width="985px" height="530px" font-size="16px">
+<svg xmlns="http://www.w3.org/2000/svg" font-family="ConsolasFallback,Consolas,monospace" width="985px" height="530px" viewBox="0 0 985 530" font-size="16px">
+
+<defs>
+  <filter id="wm-glow" x="-10%" y="-10%" width="120%" height="120%">
+    <feGaussianBlur stdDeviation="2" result="blur" />
+    <feMerge>
+      <feMergeNode in="blur" />
+      <feMergeNode in="SourceGraphic" />
+    </feMerge>
+  </filter>
+</defs>
+
 <style>
 @font-face {
 src: local('Consolas'), local('Consolas Bold');
@@ -15,8 +26,44 @@ size-adjust: 109%;
 .cc {fill: #616e7f;}
 text, tspan {white-space: pre;}
 .ascii {font-size: 10px;}
+
+.watermark-path {
+  fill: none;
+  stroke: #58a6ff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  filter: url(#wm-glow);
+  stroke-dasharray: 790;
+  stroke-dashoffset: 790;
+  animation: drawSymbol 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes drawSymbol {
+  0%   { stroke-dashoffset: 790; opacity: 0;    }
+  5%   {                           opacity: 0.12; }
+  45%  { stroke-dashoffset: 0;     opacity: 0.12; }
+  75%  { stroke-dashoffset: 0;     opacity: 0.12; }
+  90%  {                           opacity: 0;    }
+  100% { stroke-dashoffset: 790;  opacity: 0;    }
+}
 </style>
+
 <rect width="985px" height="530px" fill="#161b22" rx="15"/>
+
+<!-- BACKGROUND WATERMARK ANIMATION START -->
+<g id="background-watermark" transform="translate(430, 170)">
+  <path class="watermark-path"
+        d="M 324,204
+           L 180,24
+           L 348,24
+           C 384,24 408,48 408,84
+           C 408,120 384,156 348,156
+           L 120,156" />
+</g>
+<!-- BACKGROUND WATERMARK ANIMATION END -->
+
 <text x="-32" y="40" fill="#c9d1d9" class="ascii">
 <tspan x="-32" y="40">                               ..  ......::.</tspan>
 <tspan x="-32" y="54">                       ........ ...........:.</tspan>

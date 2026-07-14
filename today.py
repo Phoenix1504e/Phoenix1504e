@@ -336,8 +336,8 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     tree = etree.parse(filename)
     root = tree.getroot()
     
-    # --- UPDATED: Automatically targets and overrides the live running timeline block ---
-    justify_format(root, 'age_data', age_data, 29)
+    # --- FIXED VALUE: Bumped tracking length limits from 29 to 34 to avoid shifting layout dots ---
+    justify_format(root, 'age_data', age_data, 34)
     
     justify_format(root, 'commit_data', commit_data, 22)
     justify_format(root, 'star_data', star_data, 14)
@@ -459,7 +459,7 @@ if __name__ == '__main__':
     OWNER_ID, acc_date = user_data
     formatter('account data', user_time)
     
-    # --- FIXED VALUE: Dynamically evaluates metrics passing in your precise fixed timeline start date ---
+    # --- TARGET INITIAL TIMELINE BASELINE: (September 15, 2003) ---
     age_data, age_time = perf_counter(daily_readme, datetime.datetime(2003, 9, 15))
     formatter('age calculation', age_time)
     

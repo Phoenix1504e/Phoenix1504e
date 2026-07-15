@@ -337,7 +337,7 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     root = tree.getroot()
     
     # --- FIXED VALUE: Bumped tracking length limits from 29 to 34 to avoid shifting layout dots ---
-    justify_format(root, 'age_data', age_data, 50)
+    justify_format(root, 'age_data', age_data, 70)
     
     justify_format(root, 'commit_data', commit_data, 22)
     justify_format(root, 'star_data', star_data, 14)

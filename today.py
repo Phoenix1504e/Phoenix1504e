@@ -460,7 +460,7 @@ if __name__ == '__main__':
     formatter('account data', user_time)
     
     # --- TARGET INITIAL TIMELINE BASELINE: (September 15, 2003) ---
-    age_data, age_time = perf_counter(daily_readme, datetime.datetime(2003, 9, 15))
+    age_data, age_time = perf_counter(daily_readme, datetime.datetime(2004, 4, 15))
     formatter('age calculation', age_time)
     
     total_loc, loc_time = perf_counter(loc_query, ['OWNER', 'COLLABORATOR', 'ORGANIZATION_MEMBER'], 7)

@@ -4,7 +4,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 4 * * *"
+    - cron: "0 1 * * *"
   workflow_dispatch: # 1. Added so you can run it manually
 
 permissions:
@@ -28,11 +28,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/cache/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
+          # CHANGED: Swapped '**/cache/requirements.txt' to 'cache/requirements.txt' so hashFiles can find it perfectly
+          key: ${{ runner.os }}-pip-${{ hashFiles('cache/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
           
       - name: Install dependencies
-        run: python -m pip install -r cache/requirements.txt
+        # CHANGED: Added pip upgrade and fallback check to prevent environment setup crashes
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f cache/requirements.txt ]; then python -m pip install -r cache/requirements.txt; fi
         
       - name: Update README file
         env:

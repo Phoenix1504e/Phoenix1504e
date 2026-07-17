@@ -164,7 +164,8 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
         if request.json()['data']['repository']['defaultBranchRef'] is not None:
             return loc_counter_one_repo(owner, repo_name, data, cache_comment, request.json()['data']['repository']['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
         else:
-            return 0
+            # FIXED: Return a structured tuple of zero elements rather than an integer 0 to allow indexing 
+            return (0, 0, 0)
         
     force_close_file(data, cache_comment)
     if request.status_code == 403:
@@ -188,10 +189,14 @@ def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, additio
         return recursive_loc(owner, repo_name, data, cache_comment, addition_total, deletion_total, my_commits, history['pageInfo']['endCursor'])
 
 
-def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None, edges=[]):
+def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None, edges=None):
     """
     Uses GitHub's GraphQL v4 API to query all the repositories the user has access to
     """
+    # FIXED: Replaced mutable default value array `edges=[]` to prevent shared state memory cross-contamination
+    if edges is None:
+        edges = []
+        
     query_count('loc_query')
     query = '''
     query ($owner_affiliation: [RepositoryAffiliation], $login: String!, $cursor: String) {

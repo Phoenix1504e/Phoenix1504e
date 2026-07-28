@@ -37,16 +37,17 @@ def format_plural(unit):
 def simple_request(func_name, query, variables):
     """
     Returns a request, or raises an Exception if the response does not succeed.
-    Includes exponential backoff for 502 Bad Gateway errors.
+    Includes exponential backoff for 502/503/504 Bad Gateway errors.
     """
-    max_retries = 5
+    max_retries = 8
     for attempt in range(max_retries):
         request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
         if request.status_code == 200:
             return request
-        elif request.status_code == 502:
-            print(f"GitHub API 502 Error in {func_name}. Retrying in {2 ** attempt} seconds...")
-            time.sleep(2 ** attempt)
+        elif request.status_code in [502, 503, 504]:
+            sleep_time = (2 ** attempt) + 2
+            print(f"GitHub API {request.status_code} Error in {func_name}. Retrying in {sleep_time} seconds...")
+            time.sleep(sleep_time)
             continue
         break
 
@@ -126,14 +127,14 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
                                 node {
                                     ... on Commit {
                                         committedDate
-                                    }
-                                    author {
-                                        user {
-                                            id
+                                        deletions
+                                        additions
+                                        author {
+                                            user {
+                                                id
+                                            }
                                         }
                                     }
-                                    deletions
-                                    additions
                                 }
                             }
                             pageInfo {
@@ -148,23 +149,29 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
     }'''
     variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
     
-    max_retries = 5
+    max_retries = 8
     for attempt in range(max_retries):
         request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
-        if request.status_code == 502:
-            print(f"GitHub API 502 Error in recursive_loc. Retrying in {2 ** attempt} seconds...")
-            time.sleep(2 ** attempt)
+        if request.status_code in [502, 503, 504]:
+            sleep_time = (2 ** attempt) + 2
+            print(f"GitHub API {request.status_code} Error in recursive_loc ({owner}/{repo_name}). Retrying in {sleep_time} seconds...")
+            time.sleep(sleep_time)
             continue
         break
     else:
         force_close_file(data, cache_comment)
-        raise Exception('recursive_loc() repeatedly failed with 502 Bad Gateway.', QUERY_COUNT)
+        raise Exception(f'recursive_loc() repeatedly failed with server error for {owner}/{repo_name}.', QUERY_COUNT)
 
     if request.status_code == 200:
-        if request.json()['data']['repository']['defaultBranchRef'] is not None:
-            return loc_counter_one_repo(owner, repo_name, data, cache_comment, request.json()['data']['repository']['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
+        res_json = request.json()
+        if 'errors' in res_json:
+            print(f"GraphQL errors while fetching {owner}/{repo_name}: {res_json['errors']}")
+            return (addition_total, deletion_total, my_commits)
+
+        repo_data = res_json.get('data', {}).get('repository')
+        if repo_data and repo_data.get('defaultBranchRef') is not None:
+            return loc_counter_one_repo(owner, repo_name, data, cache_comment, repo_data['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
         else:
-            # FIXED: Return a structured tuple of zero elements rather than an integer 0 to allow indexing 
             return (0, 0, 0)
         
     force_close_file(data, cache_comment)
@@ -178,7 +185,7 @@ def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, additio
     Recursively call recursive_loc to sum up lines of code authored by the user
     """
     for node in history['edges']:
-        if node['node']['author']['user'] == OWNER_ID:
+        if node['node']['author'] and node['node']['author']['user'] == OWNER_ID:
             my_commits += 1
             addition_total += node['node']['additions']
             deletion_total += node['node']['deletions']
@@ -193,7 +200,6 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None,
     """
     Uses GitHub's GraphQL v4 API to query all the repositories the user has access to
     """
-    # FIXED: Replaced mutable default value array `edges=[]` to prevent shared state memory cross-contamination
     if edges is None:
         edges = []
         
@@ -202,15 +208,15 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None,
     query ($owner_affiliation: [RepositoryAffiliation], $login: String!, $cursor: String) {
         user(login: $login) {
             repositories(first: 60, after: $cursor, ownerAffiliations: $owner_affiliation) {
-            edges {
-                node {
-                    ... on Repository {
-                        nameWithOwner
-                        defaultBranchRef {
-                            target {
-                                ... on Commit {
-                                    history {
-                                        totalCount
+                edges {
+                    node {
+                        ... on Repository {
+                            nameWithOwner
+                            defaultBranchRef {
+                                target {
+                                    ... on Commit {
+                                        history {
+                                            totalCount
                                         }
                                     }
                                 }
@@ -239,6 +245,7 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
     Checks each repository in edges to see if it has been updated since the last time it was cached
     """
     cached = True
+    os.makedirs('cache', exist_ok=True)
     filename = 'cache/' + hashlib.sha256(USER_NAME.encode('utf-8')).hexdigest() + '.txt'
     try:
         with open(filename, 'r') as f:
@@ -263,11 +270,12 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
         repo_hash, commit_count, *__ = data[index].split()
         if repo_hash == hashlib.sha256(edges[index]['node']['nameWithOwner'].encode('utf-8')).hexdigest():
             try:
-                if int(commit_count) != edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']:
+                target = edges[index]['node']['defaultBranchRef']['target']
+                if int(commit_count) != target['history']['totalCount']:
                     owner, repo_name = edges[index]['node']['nameWithOwner'].split('/')
                     loc = recursive_loc(owner, repo_name, data, cache_comment)
-                    data[index] = repo_hash + ' ' + str(edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']) + ' ' + str(loc[2]) + ' ' + str(loc[0]) + ' ' + str(loc[1]) + '\n'
-            except TypeError:
+                    data[index] = repo_hash + ' ' + str(target['history']['totalCount']) + ' ' + str(loc[2]) + ' ' + str(loc[0]) + ' ' + str(loc[1]) + '\n'
+            except (TypeError, KeyError):
                 data[index] = repo_hash + ' 0 0 0 0\n'
     with open(filename, 'w') as f:
         f.writelines(cache_comment)
@@ -297,8 +305,12 @@ def add_archive():
     """
     Adds archived metrics from deleted repositories
     """
-    with open('cache/repository_archive.txt', 'r') as f:
-        data = f.readlines()
+    try:
+        with open('cache/repository_archive.txt', 'r') as f:
+            data = f.readlines()
+    except FileNotFoundError:
+        return [0, 0, 0, 0, 0]
+        
     old_data = data
     data = data[7:len(data) - 3]   
     added_loc, deleted_loc, added_commits = 0, 0, 0
@@ -338,12 +350,14 @@ def svg_overwrite(filename, age_data, commit_data, star_data, repo_data, contrib
     """
     Parse SVG files and update elements with calculated statistics
     """
+    if not os.path.exists(filename):
+        print(f"Warning: SVG file '{filename}' not found. Skipping overwrite.")
+        return
+
     tree = etree.parse(filename)
     root = tree.getroot()
     
-    # --- FIXED VALUE: Bumped tracking length limits from 29 to 34 to avoid shifting layout dots ---
     justify_format(root, 'age_data', age_data, 49)
-    
     justify_format(root, 'commit_data', commit_data, 22)
     justify_format(root, 'star_data', star_data, 14)
     justify_format(root, 'repo_data', repo_data, 6)
@@ -464,7 +478,6 @@ if __name__ == '__main__':
     OWNER_ID, acc_date = user_data
     formatter('account data', user_time)
     
-    # --- TARGET INITIAL TIMELINE BASELINE: (September 15, 2003) ---
     age_data, age_time = perf_counter(daily_readme, datetime.datetime(2004, 4, 15))
     formatter('age calculation', age_time)
     

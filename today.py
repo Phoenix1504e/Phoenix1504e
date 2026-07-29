@@ -34,22 +34,37 @@ def format_plural(unit):
     return 's' if unit != 1 else ''
 
 
+def safe_json(request):
+    """
+    Safely parse JSON response without throwing JSONDecodeError on raw HTML/empty responses
+    """
+    try:
+        return request.json()
+    except (requests.exceptions.JSONDecodeError, ValueError):
+        return None
+
+
 def simple_request(func_name, query, variables):
     """
     Returns a request, or raises an Exception if the response does not succeed.
-    Includes exponential backoff for 502/503/504 Bad Gateway errors.
+    Includes exponential backoff for 500/502/503/504 Server errors.
     """
     max_retries = 8
     for attempt in range(max_retries):
-        request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
-        if request.status_code == 200:
-            return request
-        elif request.status_code in [502, 503, 504]:
+        try:
+            request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
+            if request.status_code == 200 and safe_json(request) is not None:
+                return request
+            elif request.status_code in [500, 502, 503, 504] or safe_json(request) is None:
+                sleep_time = (2 ** attempt) + 2
+                print(f"GitHub API error/invalid JSON in {func_name} (Status {request.status_code}). Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            break
+        except requests.exceptions.RequestException as e:
             sleep_time = (2 ** attempt) + 2
-            print(f"GitHub API {request.status_code} Error in {func_name}. Retrying in {sleep_time} seconds...")
+            print(f"Network error in {func_name}: {e}. Retrying in {sleep_time}s...")
             time.sleep(sleep_time)
-            continue
-        break
 
     raise Exception(func_name, ' has failed with a', request.status_code, request.text, QUERY_COUNT)
 
@@ -71,7 +86,8 @@ def graph_commits(start_date, end_date):
     }'''
     variables = {'start_date': start_date, 'end_date': end_date, 'login': USER_NAME}
     request = simple_request(graph_commits.__name__, query, variables)
-    return int(request.json()['data']['user']['contributionsCollection']['contributionCalendar']['totalContributions'])
+    res_json = safe_json(request)
+    return int(res_json['data']['user']['contributionsCollection']['contributionCalendar']['totalContributions'])
 
 
 def graph_repos_stars(count_type, owner_affiliation, cursor=None, add_loc=0, del_loc=0):
@@ -103,11 +119,12 @@ def graph_repos_stars(count_type, owner_affiliation, cursor=None, add_loc=0, del
     }'''
     variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': cursor}
     request = simple_request(graph_repos_stars.__name__, query, variables)
-    if request.status_code == 200:
+    res_json = safe_json(request)
+    if res_json:
         if count_type == 'repos':
-            return request.json()['data']['user']['repositories']['totalCount']
+            return res_json['data']['user']['repositories']['totalCount']
         elif count_type == 'stars':
-            return stars_counter(request.json()['data']['user']['repositories']['edges'])
+            return stars_counter(res_json['data']['user']['repositories']['edges'])
 
 
 def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, deletion_total=0, my_commits=0, cursor=None):
@@ -150,20 +167,24 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
     variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
     
     max_retries = 8
+    res_json = None
     for attempt in range(max_retries):
-        request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
-        if request.status_code in [502, 503, 504]:
+        try:
+            request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
+            if request.status_code == 200:
+                res_json = safe_json(request)
+                if res_json is not None:
+                    break
+            
             sleep_time = (2 ** attempt) + 2
-            print(f"GitHub API {request.status_code} Error in recursive_loc ({owner}/{repo_name}). Retrying in {sleep_time} seconds...")
+            print(f"GitHub API {request.status_code} Error/Non-JSON in recursive_loc ({owner}/{repo_name}). Retrying in {sleep_time}s...")
             time.sleep(sleep_time)
-            continue
-        break
-    else:
-        force_close_file(data, cache_comment)
-        raise Exception(f'recursive_loc() repeatedly failed with server error for {owner}/{repo_name}.', QUERY_COUNT)
+        except requests.exceptions.RequestException as e:
+            sleep_time = (2 ** attempt) + 2
+            print(f"Network error in recursive_loc ({owner}/{repo_name}): {e}. Retrying in {sleep_time}s...")
+            time.sleep(sleep_time)
 
-    if request.status_code == 200:
-        res_json = request.json()
+    if res_json is not None:
         if 'errors' in res_json:
             print(f"GraphQL errors while fetching {owner}/{repo_name}: {res_json['errors']}")
             return (addition_total, deletion_total, my_commits)
@@ -175,9 +196,8 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
             return (0, 0, 0)
         
     force_close_file(data, cache_comment)
-    if request.status_code == 403:
-        raise Exception("Too many requests in a short amount of time!\nYou've hit the non-documented anti-abuse limit!")
-    raise Exception('recursive_loc() has failed with a', request.status_code, request.text, QUERY_COUNT)
+    print(f"Failed to fetch LOC for {owner}/{repo_name} after retries. Preserving existing counts.")
+    return (addition_total, deletion_total, my_commits)
 
 
 def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, addition_total, deletion_total, my_commits):
@@ -233,11 +253,13 @@ def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None,
     }'''
     variables = {'owner_affiliation': owner_affiliation, 'login': USER_NAME, 'cursor': cursor}
     request = simple_request(loc_query.__name__, query, variables)
-    if request.json()['data']['user']['repositories']['pageInfo']['hasNextPage']:
-        edges += request.json()['data']['user']['repositories']['edges']
-        return loc_query(owner_affiliation, comment_size, force_cache, request.json()['data']['user']['repositories']['pageInfo']['endCursor'], edges)
+    res_json = safe_json(request)
+    
+    if res_json['data']['user']['repositories']['pageInfo']['hasNextPage']:
+        edges += res_json['data']['user']['repositories']['edges']
+        return loc_query(owner_affiliation, comment_size, force_cache, res_json['data']['user']['repositories']['pageInfo']['endCursor'], edges)
     else:
-        return cache_builder(edges + request.json()['data']['user']['repositories']['edges'], comment_size, force_cache)
+        return cache_builder(edges + res_json['data']['user']['repositories']['edges'], comment_size, force_cache)
 
 
 def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
@@ -423,7 +445,8 @@ def user_getter(username):
     }'''
     variables = {'login': username}
     request = simple_request(user_getter.__name__, query, variables)
-    return {'id': request.json()['data']['user']['id']}, request.json()['data']['user']['createdAt']
+    res_json = safe_json(request)
+    return {'id': res_json['data']['user']['id']}, res_json['data']['user']['createdAt']
 
 
 def follower_getter(username):
@@ -440,7 +463,8 @@ def follower_getter(username):
         }
     }'''
     request = simple_request(follower_getter.__name__, query, {'login': username})
-    return int(request.json()['data']['user']['followers']['totalCount'])
+    res_json = safe_json(request)
+    return int(res_json['data']['user']['followers']['totalCount'])
 
 
 def query_count(funct_id):

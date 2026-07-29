@@ -13,6 +13,15 @@ HEADERS = {'authorization': 'token ' + os.environ['ACCESS_TOKEN']}
 USER_NAME = os.environ['USER_NAME']
 QUERY_COUNT = {'user_getter': 0, 'follower_getter': 0, 'graph_repos_stars': 0, 'recursive_loc': 0, 'graph_commits': 0, 'loc_query': 0}
 
+# ==============================================================================
+# REPOSITORY EXCLUSIONS
+# Add any repositories you want to ignore for Lines of Code (LOC) calculation
+# Example: EXCLUDED_REPOS = ['Phoenix1504e/dummy-commit-repo', 'Phoenix1504e/activity-art']
+# ==============================================================================
+EXCLUDED_REPOS = [
+    # 'Phoenix1504e/github-bot'
+]
+
 
 def daily_readme(birthday):
     """
@@ -289,16 +298,24 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
     cache_comment = data[:comment_size]
     data = data[comment_size:]
     for index in range(len(edges)):
-        repo_hash, commit_count, *__ = data[index].split()
-        if repo_hash == hashlib.sha256(edges[index]['node']['nameWithOwner'].encode('utf-8')).hexdigest():
+        repo_name_with_owner = edges[index]['node']['nameWithOwner']
+        repo_hash = hashlib.sha256(repo_name_with_owner.encode('utf-8')).hexdigest()
+        
+        # Check if the repository is explicitly excluded
+        if repo_name_with_owner in EXCLUDED_REPOS:
+            data[index] = repo_hash + ' 0 0 0 0\n'
+            continue
+
+        if data[index].split()[0] == repo_hash:
             try:
                 target = edges[index]['node']['defaultBranchRef']['target']
-                if int(commit_count) != target['history']['totalCount']:
-                    owner, repo_name = edges[index]['node']['nameWithOwner'].split('/')
+                if int(data[index].split()[1]) != target['history']['totalCount']:
+                    owner, repo_name = repo_name_with_owner.split('/')
                     loc = recursive_loc(owner, repo_name, data, cache_comment)
                     data[index] = repo_hash + ' ' + str(target['history']['totalCount']) + ' ' + str(loc[2]) + ' ' + str(loc[0]) + ' ' + str(loc[1]) + '\n'
             except (TypeError, KeyError):
                 data[index] = repo_hash + ' 0 0 0 0\n'
+
     with open(filename, 'w') as f:
         f.writelines(cache_comment)
         f.writelines(data)

@@ -138,7 +138,8 @@ def graph_repos_stars(count_type, owner_affiliation, cursor=None, add_loc=0, del
 
 def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, deletion_total=0, my_commits=0, cursor=None):
     """
-    Uses GitHub's GraphQL v4 API and cursor pagination to fetch 100 commits from a repository at a time
+    Uses GitHub's GraphQL v4 API and cursor pagination to fetch 100 commits from a repository at a time.
+    Uses an iterative while loop to prevent RecursionError on repositories with >1000 pages of commits.
     """
     query_count('recursive_loc')
     query = '''
@@ -173,56 +174,60 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
             }
         }
     }'''
-    variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
     
     max_retries = 8
-    res_json = None
-    for attempt in range(max_retries):
-        try:
-            request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
-            if request.status_code == 200:
-                res_json = safe_json(request)
-                if res_json is not None:
-                    break
-            
-            sleep_time = (2 ** attempt) + 2
-            print(f"GitHub API {request.status_code} Error/Non-JSON in recursive_loc ({owner}/{repo_name}). Retrying in {sleep_time}s...")
-            time.sleep(sleep_time)
-        except requests.exceptions.RequestException as e:
-            sleep_time = (2 ** attempt) + 2
-            print(f"Network error in recursive_loc ({owner}/{repo_name}): {e}. Retrying in {sleep_time}s...")
-            time.sleep(sleep_time)
-
-    if res_json is not None:
-        if 'errors' in res_json:
-            print(f"GraphQL errors while fetching {owner}/{repo_name}: {res_json['errors']}")
-            return (addition_total, deletion_total, my_commits)
-
-        repo_data = res_json.get('data', {}).get('repository')
-        if repo_data and repo_data.get('defaultBranchRef') is not None:
-            return loc_counter_one_repo(owner, repo_name, data, cache_comment, repo_data['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
-        else:
-            return (0, 0, 0)
+    
+    while True:
+        variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
+        res_json = None
         
-    force_close_file(data, cache_comment)
-    print(f"Failed to fetch LOC for {owner}/{repo_name} after retries. Preserving existing counts.")
+        for attempt in range(max_retries):
+            try:
+                request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
+                if request.status_code == 200:
+                    res_json = safe_json(request)
+                    if res_json is not None:
+                        break
+                
+                sleep_time = (2 ** attempt) + 2
+                print(f"GitHub API {request.status_code} Error/Non-JSON in recursive_loc ({owner}/{repo_name}). Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+            except requests.exceptions.RequestException as e:
+                sleep_time = (2 ** attempt) + 2
+                print(f"Network error in recursive_loc ({owner}/{repo_name}): {e}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+
+        if res_json is not None:
+            if 'errors' in res_json:
+                print(f"GraphQL errors while fetching {owner}/{repo_name}: {res_json['errors']}")
+                break
+
+            repo_data = res_json.get('data', {}).get('repository')
+            if repo_data and repo_data.get('defaultBranchRef') is not None:
+                history = repo_data['defaultBranchRef']['target']['history']
+                
+                # Process the current page of 100 commits
+                for node in history['edges']:
+                    if node['node']['author'] and node['node']['author']['user'] == OWNER_ID:
+                        my_commits += 1
+                        addition_total += node['node']['additions']
+                        deletion_total += node['node']['deletions']
+
+                # Check if we need to fetch the next page
+                if history['edges'] == [] or not history['pageInfo']['hasNextPage']:
+                    break  # No more pages, exit the loop
+                else:
+                    cursor = history['pageInfo']['endCursor']
+            else:
+                # Repository has no default branch
+                return (0, 0, 0)
+        else:
+            # API failed after all retries
+            force_close_file(data, cache_comment)
+            print(f"Failed to fetch LOC for {owner}/{repo_name} after retries. Preserving existing counts.")
+            break
+
     return (addition_total, deletion_total, my_commits)
-
-
-def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, addition_total, deletion_total, my_commits):
-    """
-    Recursively call recursive_loc to sum up lines of code authored by the user
-    """
-    for node in history['edges']:
-        if node['node']['author'] and node['node']['author']['user'] == OWNER_ID:
-            my_commits += 1
-            addition_total += node['node']['additions']
-            deletion_total += node['node']['deletions']
-
-    if history['edges'] == [] or not history['pageInfo']['hasNextPage']:
-        return addition_total, deletion_total, my_commits
-    else:
-        return recursive_loc(owner, repo_name, data, cache_comment, addition_total, deletion_total, my_commits, history['pageInfo']['endCursor'])
 
 
 def loc_query(owner_affiliation, comment_size=0, force_cache=False, cursor=None, edges=None):
